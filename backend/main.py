@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 import re
+import os
 from typing import Literal
 
 import pandas as pd
@@ -79,6 +80,28 @@ class AgentRequest(BaseModel):
 class AgenticRequest(BaseModel):
     question: str = Field(min_length=2)
     context: list[dict] = Field(default_factory=list)
+
+
+@app.get("/")
+def root() -> dict:
+    """Root endpoint with API information"""
+    return {
+        "message": "Twitter Analytics API is running",
+        "version": "1.0.0",
+        "endpoints": {
+            "GET /": "This information",
+            "GET /api/health": "Health check",
+            "GET /docs": "Swagger UI documentation",
+            "GET /redoc": "ReDoc documentation",
+            "POST /api/analyze": "Analyze tweets (text, URLs, handle, rows, dataset)",
+            "POST /api/agent": "Simple agent question answering",
+            "POST /api/agentic": "Advanced agentic workflow",
+            "POST /api/analyze-file": "Upload and analyze CSV/Excel file",
+            "POST /api/analyze-download": "Analyze latest Twitter analysis file from Downloads"
+        },
+        "documentation": "/docs",
+        "status": "online"
+    }
 
 
 @app.get("/api/health")
@@ -293,12 +316,6 @@ def _filter_records_by_handle(records: list[dict], handle: str) -> list[dict]:
     return filtered
 
 
-# --- FastAPI server startup code ---
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
 def _match_records_by_urls(records: list[dict], urls: list[str]) -> tuple[list[dict], list[str]]:
     index: dict[str, dict] = {}
     for row in records:
@@ -413,3 +430,10 @@ def analyze_download(count: int = Form(10), handle: str = Form("")) -> dict:
         "trends": trends,
         "source": {"type": "downloads", "file": str(download_file)},
     }
+
+
+# --- FastAPI server startup code ---
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
