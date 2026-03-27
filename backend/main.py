@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 import re
 import os
+import sys
 from typing import Literal
 
 import pandas as pd
@@ -13,12 +14,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent))
+
 try:
-    from .services.nlp_engine import NLPEngine
-    from .services.agentic_engine import AgenticEngine
-except ImportError:
     from services.nlp_engine import NLPEngine
     from services.agentic_engine import AgenticEngine
+except ImportError:
+    from .services.nlp_engine import NLPEngine
+    from .services.agentic_engine import AgenticEngine
 
 app = FastAPI(title="Twitter Analytics API", version="1.0.0")
 
@@ -84,19 +88,72 @@ class AgenticRequest(BaseModel):
     context: list[dict] = Field(default_factory=list)
 
 
-# Serve frontend if it exists
-frontend_path = Path(__file__).parent / "frontend"
-if frontend_path.exists():
-    app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
+# ========== FRONTEND SERVING ==========
+# Get the root directory (where backend folder is)
+ROOT_DIR = Path(__file__).parent.parent
+FRONTEND_BUILD_DIR = ROOT_DIR / "frontend" / "dist"
+FRONTEND_SOURCE_DIR = ROOT_DIR / "frontend"
+
+# Try to serve built frontend first
+if FRONTEND_BUILD_DIR.exists() and (FRONTEND_BUILD_DIR / "index.html").exists():
+    print(f"Serving frontend from: {FRONTEND_BUILD_DIR}")
+    
+    # Mount static assets
+    assets_path = FRONTEND_BUILD_DIR / "assets"
+    if assets_path.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
     
     @app.get("/")
-    async def serve_frontend():
-        index_path = frontend_path / "index.html"
-        if index_path.exists():
-            return FileResponse(str(index_path))
-        return {"message": "Frontend files found but index.html missing"}
+    async def serve_frontend_build():
+        return FileResponse(str(FRONTEND_BUILD_DIR / "index.html"))
+    
+    # Handle SPA routing - all non-API routes go to index.html
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Skip API and documentation routes
+        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc") or full_path.startswith("openapi.json"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Check if it's a static file
+        file_path = FRONTEND_BUILD_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        
+        # Return index.html for SPA routing
+        return FileResponse(str(FRONTEND_BUILD_DIR / "index.html"))
 
-# API endpoints
+elif FRONTEND_SOURCE_DIR.exists() and (FRONTEND_SOURCE_DIR / "index.html").exists():
+    print(f"Serving frontend source from: {FRONTEND_SOURCE_DIR} (development mode)")
+    
+    @app.get("/")
+    async def serve_frontend_dev():
+        return FileResponse(str(FRONTEND_SOURCE_DIR / "index.html"))
+    
+    @app.get("/{full_path:path}")
+    async def serve_spa_dev(full_path: str):
+        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        file_path = FRONTEND_SOURCE_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        
+        return FileResponse(str(FRONTEND_SOURCE_DIR / "index.html"))
+
+else:
+    print("No frontend found. API only mode.")
+    @app.get("/")
+    async def api_info():
+        return {
+            "message": "Twitter Analytics API is running",
+            "version": "1.0.0",
+            "status": "online",
+            "docs": "/docs",
+            "note": "Frontend not found. Please build frontend first: cd frontend && npm run build"
+        }
+
+
+# ========== API ENDPOINTS ==========
 @app.get("/api")
 def api_root() -> dict:
     """API information endpoint"""
@@ -185,7 +242,6 @@ def analyze(payload: AnalyzeRequest) -> dict:
                         continue
                     seen_handles.add(handle)
 
-                    # Prefer local download-sheet rows for this handle when available.
                     merged_rows: list[dict] = []
                     filtered = _filter_records_by_handle(download_records, handle)
                     if filtered:
@@ -211,7 +267,6 @@ def analyze(payload: AnalyzeRequest) -> dict:
                     if remaining <= 0:
                         break
 
-        # Final fallback: expand from handles present in the input URLs.
         if len(analyzed) < payload.count:
             remaining = payload.count - len(analyzed)
             seen_handles: set[str] = set()
