@@ -1,7 +1,7 @@
 import { useState } from "react";
 import AgentPanel from "./components/AgentPanel";
 import ClassicResultView from "./components/ClassicResultView";
-import { analyzeHandle, analyzeUrls, askAgent } from "./lib/api";
+import { analyzeHandle, analyzeUrls, askAgent, askAgentic } from "./lib/api";
 
 export default function App() {
   const [summary, setSummary] = useState({
@@ -26,11 +26,14 @@ export default function App() {
   const [handle, setHandle] = useState("");
   const [tweetCount, setTweetCount] = useState(10);
 
-  async function handleAgentAsk(question) {
+  async function handleAgentAsk(question, mode = "agentic") {
     try {
       setAgentLoading(true);
-      const response = await askAgent(question, rows);
-      return response.answer;
+      if (mode === "classic") {
+        const response = await askAgent(question, rows);
+        return response.answer;
+      }
+      return await askAgentic(question, rows);
     } catch (err) {
       return err.message || "Agent failed to respond.";
     } finally {

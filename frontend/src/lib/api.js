@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8010";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 
 export async function analyzeText(texts) {
   const res = await fetch(`${API_BASE}/api/analyze`, {
@@ -91,5 +91,15 @@ export async function askAgent(question, context) {
     body: JSON.stringify({ question, context }),
   });
   if (!res.ok) throw new Error("Failed to get agent response");
+  return res.json();
+}
+
+export async function askAgentic(question, context) {
+  const res = await fetch(`${API_BASE}/api/agentic`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, context }),
+  });
+  if (!res.ok) throw new Error("Failed to get agentic response");
   return res.json();
 }
