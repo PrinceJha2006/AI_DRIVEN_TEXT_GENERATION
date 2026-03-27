@@ -8,4 +8,8 @@ joblib
 python-multipart
 openpyxl
 requests
+<<<<<<< HEAD
 textblob
+=======
+textblob
+>>>>>>> 9383903 (save local changes)

@@ -511,6 +511,25 @@ class NLPEngine:
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
+    @staticmethod
+    def _apply_summary_metric_floor(total_likes: int, total_retweets: int, total_replies: int, total_views: int) -> tuple[int, int, int, int, bool]:
+        estimated = False
+
+        # When sources omit engagement counters, keep totals non-zero for a usable dashboard snapshot.
+        if total_views > 0 and total_likes == 0:
+            total_likes = max(1, round(total_views * 0.01))
+            estimated = True
+
+        if total_views >= 20 and total_retweets == 0:
+            total_retweets = max(1, round(max(total_likes, 1) * 0.2))
+            estimated = True
+
+        if total_views >= 20 and total_replies == 0:
+            total_replies = max(1, round(max(total_likes, 1) * 0.15))
+            estimated = True
+
+        return total_likes, total_retweets, total_replies, total_views, estimated
+
     def aggregate(self, analyzed_rows: list[dict]) -> dict:
         if not analyzed_rows:
             return {
@@ -529,13 +548,19 @@ class NLPEngine:
         negative = sum(1 for row in analyzed_rows if row.get("sentiment") == "negative")
         avg_sentiment = sum(float(row.get("sentiment_score", 0)) for row in analyzed_rows) / count
 
-        total_engagement = sum(
-            self._to_int(row.get("likes", 0))
-            + self._to_int(row.get("retweets", 0))
-            + self._to_int(row.get("replies", 0))
-            for row in analyzed_rows
-        )
+        total_likes = sum(self._to_int(row.get("likes", 0)) for row in analyzed_rows)
+        total_retweets = sum(self._to_int(row.get("retweets", 0)) for row in analyzed_rows)
+        total_replies = sum(self._to_int(row.get("replies", 0)) for row in analyzed_rows)
         total_views = sum(self._to_int(row.get("views", 0)) for row in analyzed_rows)
+
+        total_likes, total_retweets, total_replies, total_views, estimated_metrics = self._apply_summary_metric_floor(
+            total_likes,
+            total_retweets,
+            total_replies,
+            total_views,
+        )
+
+        total_engagement = total_likes + total_retweets + total_replies
         engagement_rate = (total_engagement / total_views * 100) if total_views else 0
         if isinstance(engagement_rate, float) and engagement_rate != engagement_rate:
             engagement_rate = 0
@@ -551,10 +576,11 @@ class NLPEngine:
             "avg_sentiment_score": round(avg_sentiment, 4),
             "engagement_rate": round(engagement_rate, 2),
             "top_keywords": top_keywords,
-            "total_likes": sum(self._to_int(row.get("likes", 0)) for row in analyzed_rows),
-            "total_retweets": sum(self._to_int(row.get("retweets", 0)) for row in analyzed_rows),
-            "total_replies": sum(self._to_int(row.get("replies", 0)) for row in analyzed_rows),
-            "total_views": sum(self._to_int(row.get("views", 0)) for row in analyzed_rows),
+            "total_likes": total_likes,
+            "total_retweets": total_retweets,
+            "total_replies": total_replies,
+            "total_views": total_views,
+            "estimated_metrics": estimated_metrics,
         }
 
     def build_trends(self, analyzed_rows: list[dict]) -> dict:

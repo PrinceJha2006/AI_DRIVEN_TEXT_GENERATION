@@ -43,6 +43,23 @@ Backend runs on http://127.0.0.1:8000
 - GET /api/health
 - POST /api/analyze
 - POST /api/agent
+- POST /api/agentic
+
+## Agentic AI (New)
+
+The project now supports an agentic analytics mode.
+
+- Endpoint: `POST /api/agentic`
+- Input: `question` + analyzed `context` rows
+- Behavior:
+   - Builds an execution plan from the question
+   - Runs internal analytics tools (summary, sentiment breakdown, trends, top posts, keywords)
+   - Returns final answer + plan + execution steps + confidence
+
+Frontend `AgentPanel` now includes:
+
+- `Agentic` mode (default) with plan + execution trace
+- `Classic` mode for single-shot answer (existing behavior)
 
 ## Analyze Request Modes
 

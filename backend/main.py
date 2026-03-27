@@ -10,7 +10,12 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from backend.services.nlp_engine import NLPEngine
+try:
+    from .services.nlp_engine import NLPEngine
+    from .services.agentic_engine import AgenticEngine
+except ImportError:
+    from services.nlp_engine import NLPEngine
+    from services.agentic_engine import AgenticEngine
 
 app = FastAPI(title="Twitter Analytics API", version="1.0.0")
 
@@ -22,6 +27,7 @@ app.add_middleware(
 )
 
 engine = NLPEngine()
+agentic_engine = AgenticEngine(engine)
 
 
 def _normalize_url(value: str) -> str:
@@ -66,6 +72,11 @@ class AnalyzeRequest(BaseModel):
 
 
 class AgentRequest(BaseModel):
+    question: str = Field(min_length=2)
+    context: list[dict] = Field(default_factory=list)
+
+
+class AgenticRequest(BaseModel):
     question: str = Field(min_length=2)
     context: list[dict] = Field(default_factory=list)
 
@@ -120,6 +131,8 @@ def analyze(payload: AnalyzeRequest) -> dict:
                     handle_fallbacks.append(handle)
                 else:
                     direct_urls.append(url)
+                    if handle:
+                        handle_fallbacks.append(handle)
 
             if direct_urls and remaining > 0:
                 live_rows = engine.analyze_urls(direct_urls[:remaining])
@@ -128,17 +141,69 @@ def analyze(payload: AnalyzeRequest) -> dict:
 
             if handle_fallbacks and remaining > 0:
                 seen_handles: set[str] = set()
+                seen_urls = {_normalize_url(str(row.get("source_url", ""))) for row in analyzed}
                 for handle in handle_fallbacks:
                     if handle in seen_handles:
                         continue
                     seen_handles.add(handle)
-                    live_rows = engine.analyze_handle(handle, remaining)
-                    if not live_rows:
+
+                    # Prefer local download-sheet rows for this handle when available.
+                    merged_rows: list[dict] = []
+                    filtered = _filter_records_by_handle(download_records, handle)
+                    if filtered:
+                        merged_rows.extend(engine.analyze_rows(filtered, remaining))
+
+                    if len(merged_rows) < remaining:
+                        live_rows = engine.analyze_handle(handle, remaining)
+                        merged_rows.extend(live_rows)
+
+                    if not merged_rows:
                         continue
-                    analyzed.extend(live_rows[:remaining])
+
+                    for row in merged_rows:
+                        key = _normalize_url(str(row.get("source_url", "")))
+                        if key and key in seen_urls:
+                            continue
+                        analyzed.append(row)
+                        if key:
+                            seen_urls.add(key)
+                        if len(analyzed) >= payload.count:
+                            break
                     remaining = payload.count - len(analyzed)
                     if remaining <= 0:
                         break
+
+        # Final fallback: expand from handles present in the input URLs.
+        if len(analyzed) < payload.count:
+            remaining = payload.count - len(analyzed)
+            seen_handles: set[str] = set()
+            seen_urls = {_normalize_url(str(row.get("source_url", ""))) for row in analyzed}
+            for url in clean_urls:
+                handle, _ = _extract_status_url_parts(url)
+                if not handle or handle in seen_handles:
+                    continue
+                seen_handles.add(handle)
+
+                merged_rows: list[dict] = []
+                filtered = _filter_records_by_handle(download_records, handle)
+                if filtered:
+                    merged_rows.extend(engine.analyze_rows(filtered, remaining))
+
+                if len(merged_rows) < remaining:
+                    merged_rows.extend(engine.analyze_handle(handle, remaining))
+
+                for row in merged_rows:
+                    key = _normalize_url(str(row.get("source_url", "")))
+                    if key and key in seen_urls:
+                        continue
+                    analyzed.append(row)
+                    if key:
+                        seen_urls.add(key)
+                    if len(analyzed) >= payload.count:
+                        break
+                remaining = payload.count - len(analyzed)
+                if remaining <= 0:
+                    break
 
     summary = engine.aggregate(analyzed)
     trends = engine.build_trends(analyzed)
@@ -150,6 +215,20 @@ def agent(payload: AgentRequest) -> dict:
     answer = engine.agent_answer(payload.question, payload.context)
     summary = engine.aggregate(payload.context)
     return {"answer": answer, "summary": summary}
+
+
+@app.post("/api/agentic")
+def agentic(payload: AgenticRequest) -> dict:
+    summary = engine.aggregate(payload.context)
+    execution = agentic_engine.run(payload.question, payload.context)
+    return {
+        "answer": execution.get("answer", ""),
+        "summary": summary,
+        "plan": execution.get("plan", []),
+        "steps": execution.get("steps", []),
+        "confidence": execution.get("confidence", "low"),
+        "tools": execution.get("tools", []),
+    }
 
 
 def _read_table_by_suffix(path: Path) -> pd.DataFrame:
@@ -173,13 +252,19 @@ def _find_latest_download_dataset() -> Path | None:
         "*twitter*analyse*data*.xlsx",
         "*twitter*analyse*data*.xls",
         "*twitter*analyse*data*.csv",
+        "*twitter*.xlsx",
+        "*twitter*.xls",
+        "*twitter*.csv",
+        "*tweet*.xlsx",
+        "*tweet*.xls",
+        "*tweet*.csv",
     ]
 
     candidates: list[Path] = []
     for pattern in patterns:
         candidates.extend(downloads_dir.glob(pattern))
 
-    files = [item for item in candidates if item.is_file()]
+    files = [item for item in candidates if item.is_file() and not item.name.startswith("~$")]
     if not files:
         return None
     return max(files, key=lambda item: item.stat().st_mtime)
@@ -206,6 +291,12 @@ def _filter_records_by_handle(records: list[dict], handle: str) -> list[dict]:
         if value == wanted:
             filtered.append(row)
     return filtered
+
+
+# --- FastAPI server startup code ---
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 
 
 def _match_records_by_urls(records: list[dict], urls: list[str]) -> tuple[list[dict], list[str]]:
