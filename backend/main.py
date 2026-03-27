@@ -9,6 +9,8 @@ from typing import Literal
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 try:
@@ -82,14 +84,27 @@ class AgenticRequest(BaseModel):
     context: list[dict] = Field(default_factory=list)
 
 
-@app.get("/")
-def root() -> dict:
-    """Root endpoint with API information"""
+# Serve frontend if it exists
+frontend_path = Path(__file__).parent / "frontend"
+if frontend_path.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
+    
+    @app.get("/")
+    async def serve_frontend():
+        index_path = frontend_path / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path))
+        return {"message": "Frontend files found but index.html missing"}
+
+# API endpoints
+@app.get("/api")
+def api_root() -> dict:
+    """API information endpoint"""
     return {
         "message": "Twitter Analytics API is running",
         "version": "1.0.0",
         "endpoints": {
-            "GET /": "This information",
+            "GET /api": "This information",
             "GET /api/health": "Health check",
             "GET /docs": "Swagger UI documentation",
             "GET /redoc": "ReDoc documentation",
