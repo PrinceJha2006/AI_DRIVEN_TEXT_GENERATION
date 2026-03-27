@@ -17,12 +17,8 @@ from pydantic import BaseModel, Field
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent))
 
-try:
-    from services.nlp_engine import NLPEngine
-    from services.agentic_engine import AgenticEngine
-except ImportError:
-    from .services.nlp_engine import NLPEngine
-    from .services.agentic_engine import AgenticEngine
+from services.nlp_engine import NLPEngine
+from services.agentic_engine import AgenticEngine
 
 app = FastAPI(title="Twitter Analytics API", version="1.0.0")
 
@@ -149,7 +145,7 @@ else:
             "version": "1.0.0",
             "status": "online",
             "docs": "/docs",
-            "note": "Frontend not found. Please build frontend first: cd frontend && npm run build"
+            "note": "Frontend not found. Please build frontend first: cd frontend && npm install && npm run build"
         }
 
 
