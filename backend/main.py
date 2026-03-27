@@ -149,7 +149,7 @@ else:
             "version": "1.0.0",
             "status": "online",
             "docs": "/docs",
-            "note": "Frontend not found. Please build frontend first: cd frontend && npm run build"
+            "note": "Frontend not found. Please build frontend first: cd frontend && npm install && npm run build"
         }
 
 

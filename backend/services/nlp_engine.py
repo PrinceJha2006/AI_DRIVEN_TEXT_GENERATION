@@ -368,7 +368,6 @@ class NLPEngine:
                 "user": "unknown",
             }
 
-        # Primary source: Twitter/X oEmbed API (more reliable for public tweets).
         encoded_url = requests.utils.quote(url, safe="")
         oembed_url = f"https://publish.twitter.com/oembed?omit_script=true&url={encoded_url}"
         try:
@@ -392,7 +391,6 @@ class NLPEngine:
         views = 0
         created_at = None
 
-        # Secondary source: mirrored public page for counters/date without auth.
         try:
             mirror_url = f"https://r.jina.ai/http://x.com/i/web/status/{tweet_id}"
             mirror_response = requests.get(mirror_url, timeout=14)
@@ -410,7 +408,6 @@ class NLPEngine:
         html_block = str(payload.get("html", ""))
         text = self._extract_text_from_oembed_html(html_block)
         if not text:
-            # Fallback: legacy endpoint, sometimes returns text directly.
             legacy_url = f"https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&lang=en"
             try:
                 legacy_response = requests.get(legacy_url, timeout=8)
@@ -459,7 +456,7 @@ class NLPEngine:
         if isinstance(value, int):
             return value
         if isinstance(value, float):
-            if value != value:  # NaN check
+            if value != value:
                 return default
             return int(value)
         if isinstance(value, str):
@@ -485,7 +482,6 @@ class NLPEngine:
 
     @staticmethod
     def _extract_created_at_iso(text: str) -> str | None:
-        # Example from mirror: 11:54 PM · Feb 26, 2024
         match = re.search(r"(\d{1,2}:\d{2}\s*[AP]M)\s*·\s*([A-Za-z]{3}\s+\d{1,2},\s+\d{4})", text)
         if not match:
             return None
@@ -500,7 +496,6 @@ class NLPEngine:
         if not html_block:
             return ""
 
-        # oEmbed returns tweet markup in a blockquote; the first <p> contains tweet text.
         match = re.search(r"<p[^>]*>(.*?)</p>", html_block, flags=re.IGNORECASE | re.DOTALL)
         if not match:
             return ""
@@ -515,7 +510,6 @@ class NLPEngine:
     def _apply_summary_metric_floor(total_likes: int, total_retweets: int, total_replies: int, total_views: int) -> tuple[int, int, int, int, bool]:
         estimated = False
 
-        # When sources omit engagement counters, keep totals non-zero for a usable dashboard snapshot.
         if total_views > 0 and total_likes == 0:
             total_likes = max(1, round(total_views * 0.01))
             estimated = True
@@ -661,7 +655,6 @@ class NLPEngine:
         return [word for word, _ in Counter(useful).most_common(top_n)]
 
     def agent_answer(self, question: str, context_rows: list[dict]) -> str:
-        # Refresh key at request time so runtime env updates are picked up.
         self.groq_api_key = os.getenv("GROQ_API_KEY", self.groq_api_key).strip()
 
         in_scope, scope_reason = self._is_project_related_question(question)
@@ -755,7 +748,6 @@ class NLPEngine:
             "top", "worst", "best", "count", "summary",
         }
 
-        # Common clearly out-of-scope intents.
         outside_terms = {
             "weather", "temperature", "movie", "song", "joke", "recipe", "travel",
             "politics", "election", "cricket", "football", "stock", "crypto", "medical",

@@ -107,7 +107,6 @@ export default function App() {
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="radio" name="inputMethod" checked={inputMethod === "handle"} onChange={() => setInputMethod("handle")} />
             Twitter Handle
-          
           </label>
         </div>
 
@@ -159,7 +158,7 @@ export default function App() {
         </button>
       </section>
 
-      <ClassicResultView rows={rows} summary={summary} />
+      <ClassicResultView rows={rows} summary={summary} trends={trends} />
 
       <section className="mt-6 card">
         <h3 className="text-xl font-bold text-ink">AI Agent Assistant</h3>
